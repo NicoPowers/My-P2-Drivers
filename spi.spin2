@@ -1,26 +1,42 @@
 CON
 
 _clkfreq = 150_000_000
-divisor = 1
 desired_frequency = 100_000
-spi_clk = 20
-spi_mosi = 21
-spi_cs = 22
 
 
 VAR
 
-long stack[50]
+long spi_clk_pin, spi_mosi_pin, spi_miso_pin, isInitialized
 
 PUB main()
 
-SPI_INIT(20, 23, 22, 0, 100_000, 8)
+isInitialized := false
+pinh(22)
+waitms(10)
+
+SPI_INIT(20, 21, 23, 3, 100_000, 8)
+
+
+pinl(22)
+SPI_WRITE($12, 1)
+pinh(22)
 
 repeat
 
-PUB SPI_INIT(clk_pin, mosi_pin, miso_pin, spi_mode, frequency, data_length) : status | clk_m, clk_x, mosi_m, mosi_x, miso_m, miso_x, miso_clk_displacement, mosi_clk_displacement, displacement
+PUB SPI_INIT(clk_pin, mosi_pin, miso_pin, spi_mode, frequency, data_length) : status | clk_m, clk_x, mosi_m, mosi_x, miso_m, miso_x, miso_clk_displacement, mosi_clk_displacement, displacement, modified_frequency
 
-debug(udec(clk_pin), udec(mosi_pin), udec(miso_pin))
+' verify correct spi_mode is entered (0-3)
+if spi_mode < 0 || spi_mode > 3
+  debug("ERROR: incorrect spi_mode")
+  status := 1
+  return
+
+' verify that the input frequency is in between is not too slow or too fast, inclusive ($FFFF is the max value that can be stored and value of $0 would do nothing)
+modified_frequency := clkfreq / frequency / 2
+if modified_frequency < $1 || modified_frequency > $FFFF
+  debug("ERROR: incorrect frequency")
+  status := -1
+  return
 
 ' verify the data_length is between 1 and 32, inclusive
 if data_length < 1 || data_length > 32
@@ -28,7 +44,7 @@ if data_length < 1 || data_length > 32
   status := -1
   return
 
-' verify that the mosi and miso pins are not too far away from the clk and check for pin uniqueness
+' verify that the mosi pin is not too far away from the clk and check for pin uniqueness
 if abs(mosi_pin - clk_pin) > 3
   debug("ERROR: mosi pin too far away from clk pin")
   status := -1
@@ -38,6 +54,7 @@ elseif (mosi_pin == clk_pin)
   status := -1
   return
 
+' verify that the msio pin is not too far away from the clk and check for pin uniqueness
 if abs(miso_pin - clk_pin) > 3
   debug("ERROR: miso pin too far away from clk pin")
   status := -1
@@ -47,41 +64,77 @@ elseif (miso_pin == clk_pin)
   status := -1
   return
 
+' verify that the mosi pin is not the same as the miso pin
 if (miso_pin == mosi_pin)
   debug("ERROR: miso pin cannot be the same as miso pin")
   status := -1
   return
 
+' initialize the SPI pins
+spi_clk_pin   := clk_pin
+spi_mosi_pin  := mosi_pin
+spi_miso_pin  := miso_pin
 
-' determine P_MINUS_B value for miso and mosi for the clock
+' initialize mode for clk, mosi, and miso
+clk_m   := $0000_0000 | P_OE | P_TRANSITION
+mosi_m  := $0000_0000 | P_OE | P_SYNC_TX
+miso_m  := $0000_0000 | P_SYNC_RX
+
+' initialize x register data for clk, mosi, and miso (using start-stop method for miso and mosi)
+clk_x   := modified_frequency
+mosi_x  := $0000_0000 | (1 << 5) | (data_length-1)
+miso_x  := $0000_0000 | (1 << 5) | (data_length-1)
+
+' determine P_MINUS_B value for miso and mosi (clock is the B signal)
 displacement := clk_pin - mosi_pin
-mosi_m := $0000_0000 | ((displacement & 7) << 24)
+mosi_m |= ((displacement & 7) << 24)
 displacement := clk_pin - miso_pin
-miso_m := $0000_0000 | ((displacement & 7) << 24)
+miso_m |= ((displacement & 7) << 24)
 
 
 case spi_mode
   ' CPOL = 0 & CPHA = 0
   0:
-    ' setup SPI MOSI to idle on LOW
-    clk_m := P_OE | P_TRANSITION
-    clk_x := 2 #> (_clkfreq / frequency / 2) <# $FFFF
-    ' setup SPI MOSI to shift out data on falling edge
-    mosi_m := P_INVERT_B | P_OE | P_SYNC_TX
-    mosi_x := $2 << 5 | (data_length-1)
-    ' setup SPI MISO to sample on rising edge
-    miso_m := P_SYNC_RX
-    miso_x := $2 << 5 | (data_length-1)
+    ' change SPI MOSI to shift out data on falling edge
+    mosi_m |= P_INVERT_B
 
+  ' CPOL = 0 & CPHA = 1
+  1:
+    ' change SPI MISO to sample data on falling edge
+    miso_m |= P_INVERT_B
+
+  ' CPOL = 1 & CPHA = 1
+  2:
+    ' change SPI MISO to sample data on falling edge
+    miso_m |= P_INVERT_B
+    ' change clock to idle on HIGH
+    clk_m |= P_INVERT_OUTPUT
+
+  ' CPOL = 1 & CPHA = 0
+  3:
+   ' change SPI MOSI to shift out data on falling edge
+    mosi_m |= P_INVERT_B
+    ' change clock to idle on HIGH
+    clk_m |= P_INVERT_OUTPUT
+
+
+debug(ubin_long(mosi_x), ubin_long(P_MINUS1_B | P_OE | P_SYNC_TX))
 ' setup SPI MOSI to idle on LOW
-pinstart(clk_pin, P_OE | P_TRANSITION, 2 #> (_clkfreq / frequency / 2) <# $FFFF, 0)
+pinstart(clk_pin, clk_m, clk_x, 0)
 ' setup SPI MOSI to shift out data on falling edge
-pinstart(mosi_pin, P_INVERT_B | P_MINUS1_B | P_OE | P_SYNC_TX, $2 << 5 | (data_length-1), 0)
+pinstart(mosi_pin, mosi_m, mosi_x, 0)
 ' setup SPI MISO to sample on rising edge
-pinstart(miso_pin, P_INVERT_B | P_MINUS1_B | P_OE | P_SYNC_TX, $2 << 5 | (data_length-1), 0)
+pinstart(miso_pin, miso_m, miso_x, 0)
 
+isInitialized := true
 
-repeat
+PUB SPI_WRITE(data, LSB)
+
+if isInitialized
+
+  WYPIN(spi_mosi_pin, data)
+  WYPIN(spi_clk_pin, 16)
+  waitForIN(spi_clk_pin)
 
 PUB waitForIN(pin)
 
@@ -97,5 +150,4 @@ akpin pin                       ' ack IN to clear it
 debug("in set")
 
 end
-
 
