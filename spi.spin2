@@ -7,9 +7,57 @@ spi_clk = 20
 spi_mosi = 21
 spi_cs = 22
 
+
 VAR
 
 long stack[50]
+
+
+PUB SPI_INIT(clk_pin, mosi_pin, miso_pin, spi_mode, frequency, data_length) : status | clk_m, clk_x, mosi_m, mosi_x, miso_m, miso_x, miso_clk_displacement, mosi_clk_displacement, displacement
+
+' first need to verify that the mosi and miso pins are not too far away from the clk and check for pin uniqueness
+if abs(mosi_pin - clk_pin) > 3
+  status := -1
+  return
+elseif (mosi_pin == clk_pin)
+   status := -1
+  return
+
+if abs(miso_pin - clk_pin) > 3
+   status := -1
+  return
+elseif (miso_pin == clk_pin)
+   status := -1
+  return
+
+if (miso_pin == mosi_pin)
+  status := -1
+  return
+
+' determine P_MINUS_B value for miso and mosi for the clock
+displacement = clk_pin - mosi_pin
+
+{
+case spi_mode
+  ' CPOL = 0 & CPHA = 0
+  0:
+    ' setup SPI MOSI to idle on LOW
+    clk_m := P_OE | P_TRANSITION
+    clk_x := 2 #> (_clkfreq / frequency / 2) <# $FFFF
+    ' setup SPI MOSI to shift out data on falling edge
+    mosi_m := P_INVERT_B | P_MINUS1_B | P_OE | P_SYNC_TX
+    mosi_x := $2 << 5 | (data_length-1)
+    ' setup SPI MISO to sample on rising edge
+    miso_m := P_MINUS1_B | P_SYNC_RX
+    miso_x := $2 << 5 | (data_length-1)
+
+' setup SPI MOSI to idle on LOW
+pinstart(clk_pin, P_OE | P_TRANSITION, 2 #> (_clkfreq / frequency / 2) <# $FFFF, 0)
+' setup SPI MOSI to shift out data on falling edge
+pinstart(mosi_pin, P_INVERT_B | P_MINUS1_B | P_OE | P_SYNC_TX, $2 << 5 | (data_length-1), 0)
+' setup SPI MISO to sample on rising edge
+pinstart(miso_pin, P_INVERT_B | P_MINUS1_B | P_OE | P_SYNC_TX, $2 << 5 | (data_length-1), 0)
+}
 
 PUB main() | num_base_periods, cnt
 
