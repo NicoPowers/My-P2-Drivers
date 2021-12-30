@@ -12,32 +12,54 @@ VAR
 
 long stack[50]
 
+PUB main()
+
+SPI_INIT(20, 23, 22, 0, 100_000, 8)
+
+repeat
 
 PUB SPI_INIT(clk_pin, mosi_pin, miso_pin, spi_mode, frequency, data_length) : status | clk_m, clk_x, mosi_m, mosi_x, miso_m, miso_x, miso_clk_displacement, mosi_clk_displacement, displacement
 
-' first need to verify that the mosi and miso pins are not too far away from the clk and check for pin uniqueness
+debug(udec(clk_pin), udec(mosi_pin), udec(miso_pin))
+
+' verify the data_length is between 1 and 32, inclusive
+if data_length < 1 || data_length > 32
+  debug("ERROR: incorrect data length size")
+  status := -1
+  return
+
+' verify that the mosi and miso pins are not too far away from the clk and check for pin uniqueness
 if abs(mosi_pin - clk_pin) > 3
+  debug("ERROR: mosi pin too far away from clk pin")
   status := -1
   return
 elseif (mosi_pin == clk_pin)
-   status := -1
-  return
-
-if abs(miso_pin - clk_pin) > 3
-   status := -1
-  return
-elseif (miso_pin == clk_pin)
-   status := -1
-  return
-
-if (miso_pin == mosi_pin)
+  debug("ERROR: mosi pin cannot be the same as clk pin")
   status := -1
   return
 
-' determine P_MINUS_B value for miso and mosi for the clock
-displacement = clk_pin - mosi_pin
+if abs(miso_pin - clk_pin) > 3
+  debug("ERROR: miso pin too far away from clk pin")
+  status := -1
+  return
+elseif (miso_pin == clk_pin)
+  debug("ERROR: miso pin cannot be the same as clk pin")
+  status := -1
+  return
 
-{
+if (miso_pin == mosi_pin)
+  debug("ERROR: miso pin cannot be the same as miso pin")
+  status := -1
+  return
+
+
+' determine P_MINUS_B value for miso and mosi for the clock
+displacement := clk_pin - mosi_pin
+mosi_m := $0000_0000 | ((displacement & 7) << 24)
+displacement := clk_pin - miso_pin
+miso_m := $0000_0000 | ((displacement & 7) << 24)
+
+
 case spi_mode
   ' CPOL = 0 & CPHA = 0
   0:
@@ -45,10 +67,10 @@ case spi_mode
     clk_m := P_OE | P_TRANSITION
     clk_x := 2 #> (_clkfreq / frequency / 2) <# $FFFF
     ' setup SPI MOSI to shift out data on falling edge
-    mosi_m := P_INVERT_B | P_MINUS1_B | P_OE | P_SYNC_TX
+    mosi_m := P_INVERT_B | P_OE | P_SYNC_TX
     mosi_x := $2 << 5 | (data_length-1)
     ' setup SPI MISO to sample on rising edge
-    miso_m := P_MINUS1_B | P_SYNC_RX
+    miso_m := P_SYNC_RX
     miso_x := $2 << 5 | (data_length-1)
 
 ' setup SPI MOSI to idle on LOW
@@ -57,70 +79,9 @@ pinstart(clk_pin, P_OE | P_TRANSITION, 2 #> (_clkfreq / frequency / 2) <# $FFFF,
 pinstart(mosi_pin, P_INVERT_B | P_MINUS1_B | P_OE | P_SYNC_TX, $2 << 5 | (data_length-1), 0)
 ' setup SPI MISO to sample on rising edge
 pinstart(miso_pin, P_INVERT_B | P_MINUS1_B | P_OE | P_SYNC_TX, $2 << 5 | (data_length-1), 0)
-}
-
-PUB main() | num_base_periods, cnt
-
-' pull CS high
-pinh(spi_cs)
-waitms(100)
-' start clock generation at desired SPI frequency
-'num_base_periods := round((4_294_967_295.0 /. float(_clkfreq))) * divisor * desired_frequency
-' pin, mode bit flags, x register data, y register data
-'pinstart(20, P_OE | P_NCO_FREQ, divisor, num_base_periods)
-'pinf(20)
 
 
-' setup SPI CLK
-pinstart(spi_clk, P_OE | P_TRANSITION | P_INVERT_OUTPUT, 2 #> (_clkfreq / desired_frequency / 2) <# $FFFF, 0)
-{
-disableSmartPin(spi_clk)
-WRPIN(spi_clk, P_OE | P_TRANSITION )
-WXPIN(spi_clk, 2 #> (_clkfreq / desired_frequency / 2) <# $FFFF)
-enableSmartPin(spi_clk)
-}
-
-' setup SPI MOSI
-pinstart(spi_mosi, P_MINUS1_B | P_OE | P_SYNC_TX, $27, 0)
-{
-WRPIN(spi_mosi, P_MINUS1_B | P_OE | P_SYNC_TX)
-WXPIN(spi_mosi, $27) ' x[5] = 1 for start-stop mode, x[4:0] = 7 for 8-bit data, so $27 = 0010_0111 in binary
-enableSmartPin(spi_mosi)
-}
-' start data transmission
-
-waitms(10)
-
-' pull CS low
-pinl(spi_cs)
-
-' fill data buffer
-WYPIN(spi_mosi, $35)
-' start clocking out data
-WYPIN(spi_clk, 16)
-' wait for data to be sent
-waitForIN(spi_clk)
-
-
-
-' fill data buffer
-WYPIN(spi_mosi, $12)
-' start clocking out data
-WYPIN(spi_clk, 16)
-' wait for data to be sent
-waitForIN(spi_clk)
-
-pinclear(spi_mosi)
-pinclear(spi_clk)
-
-
-' pull CS high
-pinh(spi_cs)
-
-' wait forever, code is done
 repeat
-
-
 
 PUB waitForIN(pin)
 
@@ -138,15 +99,3 @@ debug("in set")
 end
 
 
-PRI disableSmartPin(pin)
-
-org
-dirl pin
-end
-
-
-PRI enableSmartPin(pin)
-
-org
-dirh pin
-end
