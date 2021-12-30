@@ -6,29 +6,33 @@ desired_frequency = 100_000
 
 VAR
 
-long spi_clk_pin, spi_mosi_pin, spi_miso_pin, isInitialized
+long spi_clk_pin, spi_mosi_pin, spi_miso_pin, spi_isInitialized, mosi_isLSB, miso_isLSB
 
-PUB main()
+PUB SPI_STARTUP() | temp, temp2
 
-isInitialized := false
+
+spi_isInitialized := false
 pinh(22)
 waitms(10)
 
-SPI_INIT(20, 21, 23, 3, 100_000, 8)
-
+SPI_INIT(20, 21, 23, 0, true, true, 100_000)
 
 pinl(22)
-SPI_WRITE($12, 1)
+SPI_WRITE_8($12)
 pinh(22)
+
 
 repeat
 
-PUB SPI_INIT(clk_pin, mosi_pin, miso_pin, spi_mode, frequency, data_length) : status | clk_m, clk_x, mosi_m, mosi_x, miso_m, miso_x, miso_clk_displacement, mosi_clk_displacement, displacement, modified_frequency
+
+
+
+PUB SPI_INIT(clk_pin, mosi_pin, miso_pin, spi_mode, mosi_lsb, miso_lsb, frequency) : status | clk_m, clk_x, mosi_m, mosi_x, miso_m, miso_x, displacement, modified_frequency
 
 ' verify correct spi_mode is entered (0-3)
 if spi_mode < 0 || spi_mode > 3
   debug("ERROR: incorrect spi_mode")
-  status := 1
+  status := -1
   return
 
 ' verify that the input frequency is in between is not too slow or too fast, inclusive ($FFFF is the max value that can be stored and value of $0 would do nothing)
@@ -38,11 +42,6 @@ if modified_frequency < $1 || modified_frequency > $FFFF
   status := -1
   return
 
-' verify the data_length is between 1 and 32, inclusive
-if data_length < 1 || data_length > 32
-  debug("ERROR: incorrect data length size")
-  status := -1
-  return
 
 ' verify that the mosi pin is not too far away from the clk and check for pin uniqueness
 if abs(mosi_pin - clk_pin) > 3
@@ -70,6 +69,8 @@ if (miso_pin == mosi_pin)
   status := -1
   return
 
+
+
 ' initialize the SPI pins
 spi_clk_pin   := clk_pin
 spi_mosi_pin  := mosi_pin
@@ -77,13 +78,13 @@ spi_miso_pin  := miso_pin
 
 ' initialize mode for clk, mosi, and miso
 clk_m   := $0000_0000 | P_OE | P_TRANSITION
-mosi_m  := $0000_0000 | P_OE | P_SYNC_TX
-miso_m  := $0000_0000 | P_SYNC_RX
+mosi_m  := $0000_0000 | P_OE | P_SYNC_TX | P_SYNC_IO
+miso_m  := $0000_0000 | P_SYNC_RX | P_SYNC_IO
 
 ' initialize x register data for clk, mosi, and miso (using start-stop method for miso and mosi)
 clk_x   := modified_frequency
-mosi_x  := $0000_0000 | (1 << 5) | (data_length-1)
-miso_x  := $0000_0000 | (1 << 5) | (data_length-1)
+mosi_x  := $0000_0000 | (1 << 5) | 7
+miso_x  := $0000_0000 | (1 << 5) | 7
 
 ' determine P_MINUS_B value for miso and mosi (clock is the B signal)
 displacement := clk_pin - mosi_pin
@@ -126,28 +127,42 @@ pinstart(mosi_pin, mosi_m, mosi_x, 0)
 ' setup SPI MISO to sample on rising edge
 pinstart(miso_pin, miso_m, miso_x, 0)
 
-isInitialized := true
+spi_isInitialized := true
+mosi_isLSB := mosi_lsb
+miso_isLSB := miso_lsb
 
-PUB SPI_WRITE(data, LSB)
+PUB SPI_WRITE_8(data) | data_mod
 
-if isInitialized
-
-  WYPIN(spi_mosi_pin, data)
+if spi_isInitialized
+  if !mosi_isLSB
+    data_mod := data rev 7
+  else
+    data_mod := data
+  WYPIN(spi_mosi_pin, data_mod)
   WYPIN(spi_clk_pin, 16)
   waitForIN(spi_clk_pin)
+
+PUB SPI_READ(LSB)
+
+if spi_isInitialized
+  debug("waiting for data...")
+  WYPIN(spi_clk_pin, 16)
+  waitForIN(spi_miso_pin)
+  debug("done reading data...")
+  debug(uhex(RDPIN(spi_miso_pin)))
 
 PUB waitForIN(pin)
 
 org
 
 WAIT_IN
-testp pin wc                    ' get state of IN bit for smart pin, store in C
+testp pin wc
+nop                             ' get state of IN bit for smart pin, store in C
 if_c jmp #IN_SET                ' if C is set (IN = 1), branch to IN_SET
 jmp #WAIT_IN                    ' if C is NOT set, go back to WAIT_IN to continue polling
 
 IN_SET
 akpin pin                       ' ack IN to clear it
-debug("in set")
 
 end
 
