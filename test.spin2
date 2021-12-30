@@ -1,0 +1,38 @@
+CON
+
+_clkfreq = 100_000_000
+
+
+VAR
+
+long stack[50]
+
+PUB main()
+
+  coginit(NEWCOG, @PWM_TEST, @stack)
+
+dat
+
+PWM_TEST
+
+        org
+
+'        asmclk
+        dirl            pwm_pin
+
+        wrpin           ##(P_TT_01 | P_PWM_SAWTOOTH), pwm_pin
+        mov             pr0, base_periods
+        shl             pr0, #16
+        or              pr0, divisor
+        wxpin           pr0, pwm_pin
+        dirh            pwm_pin
+        wypin           duty_value, pwm_pin
+
+DONE    jmp #DONE
+
+
+pwm_pin                 long    20
+base_periods            long    512
+divisor                 long    5
+duty_value              long    256
+

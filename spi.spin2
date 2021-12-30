@@ -1,0 +1,104 @@
+CON
+
+_clkfreq = 150_000_000
+divisor = 1
+desired_frequency = 100_000
+spi_clk = 20
+spi_mosi = 21
+spi_cs = 22
+
+VAR
+
+long stack[50]
+
+PUB main() | num_base_periods, cnt
+
+' pull CS high
+pinh(spi_cs)
+waitms(100)
+' start clock generation at desired SPI frequency
+'num_base_periods := round((4_294_967_295.0 /. float(_clkfreq))) * divisor * desired_frequency
+' pin, mode bit flags, x register data, y register data
+'pinstart(20, P_OE | P_NCO_FREQ, divisor, num_base_periods)
+'pinf(20)
+
+
+' setup SPI CLK
+pinstart(spi_clk, P_OE | P_TRANSITION | P_INVERT_OUTPUT, 2 #> (_clkfreq / desired_frequency / 2) <# $FFFF, 0)
+{
+disableSmartPin(spi_clk)
+WRPIN(spi_clk, P_OE | P_TRANSITION )
+WXPIN(spi_clk, 2 #> (_clkfreq / desired_frequency / 2) <# $FFFF)
+enableSmartPin(spi_clk)
+}
+
+' setup SPI MOSI
+pinstart(spi_mosi, P_MINUS1_B | P_OE | P_SYNC_TX, $27, 0)
+{
+WRPIN(spi_mosi, P_MINUS1_B | P_OE | P_SYNC_TX)
+WXPIN(spi_mosi, $27) ' x[5] = 1 for start-stop mode, x[4:0] = 7 for 8-bit data, so $27 = 0010_0111 in binary
+enableSmartPin(spi_mosi)
+}
+' start data transmission
+
+waitms(10)
+
+' pull CS low
+pinl(spi_cs)
+
+' fill data buffer
+WYPIN(spi_mosi, $35)
+' start clocking out data
+WYPIN(spi_clk, 16)
+' wait for data to be sent
+waitForIN(spi_clk)
+
+
+
+' fill data buffer
+WYPIN(spi_mosi, $12)
+' start clocking out data
+WYPIN(spi_clk, 16)
+' wait for data to be sent
+waitForIN(spi_clk)
+
+pinclear(spi_mosi)
+pinclear(spi_clk)
+
+
+' pull CS high
+pinh(spi_cs)
+
+' wait forever, code is done
+repeat
+
+
+
+PUB waitForIN(pin)
+
+org
+
+WAIT_IN
+testp pin wc                    ' get state of IN bit for smart pin, store in C
+if_c jmp #IN_SET                ' if C is set (IN = 1), branch to IN_SET
+jmp #WAIT_IN                    ' if C is NOT set, go back to WAIT_IN to continue polling
+
+IN_SET
+akpin pin                       ' ack IN to clear it
+debug("in set")
+
+end
+
+
+PRI disableSmartPin(pin)
+
+org
+dirl pin
+end
+
+
+PRI enableSmartPin(pin)
+
+org
+dirh pin
+end
