@@ -6,19 +6,21 @@ desired_frequency = 100_000
 
 VAR
 
-long spi_clk_pin, spi_mosi_pin, spi_miso_pin, spi_isInitialized, mosi_isLSB, miso_isLSB
+long spi_clk_pin, spi_mosi_pin, spi_miso_pin, spi_isInitialized, mosi_isLSB, miso_isLSB, data_length
 
 PUB SPI_STARTUP() | temp, temp2
 
+
+debug("Hello")
 
 spi_isInitialized := false
 pinh(22)
 waitms(10)
 
-SPI_INIT(20, 21, 23, 0, true, true, 100_000)
+SPI_INIT(20, 21, 23, 0, false, false, 100_000, 8)
 
 pinl(22)
-SPI_WRITE_8($12)
+SPI_WRITE($12)
 pinh(22)
 
 
@@ -27,7 +29,7 @@ repeat
 
 
 
-PUB SPI_INIT(clk_pin, mosi_pin, miso_pin, spi_mode, mosi_lsb, miso_lsb, frequency) : status | clk_m, clk_x, mosi_m, mosi_x, miso_m, miso_x, displacement, modified_frequency
+PUB SPI_INIT(clk_pin, mosi_pin, miso_pin, spi_mode, mosi_lsb, miso_lsb, frequency, bits) : status | clk_m, clk_x, mosi_m, mosi_x, miso_m, miso_x, displacement, modified_frequency
 
 ' verify correct spi_mode is entered (0-3)
 if spi_mode < 0 || spi_mode > 3
@@ -69,6 +71,10 @@ if (miso_pin == mosi_pin)
   status := -1
   return
 
+' verify that the number of bits is valid
+if bits < 2 or bits > 32
+  status := -1
+  return
 
 
 ' initialize the SPI pins
@@ -83,8 +89,8 @@ miso_m  := $0000_0000 | P_SYNC_RX | P_SYNC_IO
 
 ' initialize x register data for clk, mosi, and miso (using start-stop method for miso and mosi)
 clk_x   := modified_frequency
-mosi_x  := $0000_0000 | (1 << 5) | 7
-miso_x  := $0000_0000 | (1 << 5) | 7
+mosi_x  := $0000_0000 | (1 << 5) | (bits - 1)
+miso_x  := $0000_0000 | (1 << 5) | (bits - 1)
 
 ' determine P_MINUS_B value for miso and mosi (clock is the B signal)
 displacement := clk_pin - mosi_pin
@@ -131,22 +137,25 @@ spi_isInitialized := true
 mosi_isLSB := mosi_lsb
 miso_isLSB := miso_lsb
 
-PUB SPI_WRITE_8(data) | data_mod
+PUB SPI_WRITE(data) | data_mod
 
 if spi_isInitialized
+  data_mod := data
+  debug(ubin(data_mod))
   if !mosi_isLSB
-    data_mod := data rev 7
-  else
-    data_mod := data
+    if (data_length < 32)
+      data_mod <<= (32-data_length)
+    data_mod rev= 31
+    debug(ubin(data_mod))
   WYPIN(spi_mosi_pin, data_mod)
-  WYPIN(spi_clk_pin, 16)
+  WYPIN(spi_clk_pin, data_length*2)
   waitForIN(spi_clk_pin)
 
 PUB SPI_READ(LSB)
 
 if spi_isInitialized
   debug("waiting for data...")
-  WYPIN(spi_clk_pin, 16)
+  WYPIN(spi_clk_pin, data_length*2)
   waitForIN(spi_miso_pin)
   debug("done reading data...")
   debug(uhex(RDPIN(spi_miso_pin)))
@@ -165,4 +174,3 @@ IN_SET
 akpin pin                       ' ack IN to clear it
 
 end
-
