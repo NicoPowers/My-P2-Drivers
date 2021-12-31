@@ -23,5 +23,14 @@ pinl(22)
 SPI.SPI_TRANSFER($5678_1234, 16, true)
 pinh(22)
 
+SPI.SPI_DEINIT()
+
+SPI.SPI_INIT(20, 21, 23, 0, 50_000)
+
+pinl(22)
+SPI.SPI_TRANSFER($1234_5678, 16, true)
+pinh(22)
+
+
 repeat
 
