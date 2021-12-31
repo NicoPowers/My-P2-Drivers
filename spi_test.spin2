@@ -3,6 +3,10 @@
 
 CON
   _clkfreq = 150_000_000
+  spi_clk = 60
+  spi_mosi = 59
+  spi_miso = 58
+  spi_cs = 61
 
 VAR
   long  symbol
@@ -11,25 +15,20 @@ OBJ
   SPI      : "spi.spin2"
 
 
-PUB main()
+PUB main() | data
+
+pinh(spi_cs)
 
 
-pinh(22)
-waitms(10)
+' clk, mosi, miso, mode, frequency
+SPI.SPI_INIT(spi_clk, spi_mosi, spi_miso, 0, 1_000_000)
 
-SPI.SPI_INIT(20, 21, 23, 0, 100_000)
+pinl(spi_cs)
+SPI.SPI_WRITE($90FF_FF00, 32, false)
+data := SPI.SPI_READ(8, false)
+debug(uhex(data))
+pinh(spi_cs)
 
-pinl(22)
-SPI.SPI_TRANSFER($5678_1234, 16, true)
-pinh(22)
-
-SPI.SPI_DEINIT()
-
-SPI.SPI_INIT(20, 21, 23, 0, 50_000)
-
-pinl(22)
-SPI.SPI_TRANSFER($1234_5678, 16, true)
-pinh(22)
 
 
 repeat
