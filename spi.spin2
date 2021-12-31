@@ -103,8 +103,7 @@ case spi_mode
 ' start SPI CLK with no transitions
 pinstart(clk_pin, clk_m, clk_x, 0)
 
-' start SPI MOSI
-pinstart(mosi_pin, mosi_m, mosi_x, 0)
+
 
 ' start SPI MISO
 pinstart(miso_pin, miso_m, miso_x, 0)
@@ -137,13 +136,18 @@ if spi_isInitialized
 
   ' setup MOSI
   mosi_x := (mosi_x & $FFE0) | (bitsToWrite - 1)
+  {
   WXPIN(spi_mosi_pin, mosi_x)
   WYPIN(spi_mosi_pin, dataWriteMod)
+  }
+  ' start SPI MOSI
+  pinstart(spi_mosi_pin, mosi_m, mosi_x, dataWriteMod)
 
   ' start clocking
   WYPIN(spi_clk_pin, bitsToWrite*2)
   ' wait until the clock stops
   waitForIN(spi_clk_pin)
+  pinclear(spi_mosi_pin)
 
 PUB SPI_READ(bitsToRead, isLSB) : dataReadMod
 

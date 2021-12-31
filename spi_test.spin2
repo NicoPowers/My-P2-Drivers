@@ -10,6 +10,7 @@ CON
 
 VAR
   long  symbol
+  long  stringAddress
 
 OBJ
   SPI      : "spi.spin2"
@@ -23,11 +24,39 @@ pinh(spi_cs)
 ' clk, mosi, miso, mode, frequency
 SPI.SPI_INIT(spi_clk, spi_mosi, spi_miso, 0, 1_000_000)
 
+' check manufacturer id and device id (should be $EF and $17, respectively)
 pinl(spi_cs)
 SPI.SPI_WRITE($90FF_FF00, 32, false)
 data := SPI.SPI_READ(8, false)
 debug(uhex(data))
+data := SPI.SPI_READ(8, false)
+debug(uhex(data))
 pinh(spi_cs)
+
+waitms(1)
+
+pinl(spi_cs)
+
+'read address to ensure it is erased ($FF)
+SPI.SPI_WRITE($0380_0000, 32, false)
+data := SPI.SPI_READ(8, false)
+
+pinh(spi_cs)
+
+waitms(1)
+
+if (data == $FF)
+    debug("data is empty")
+  ' write enable
+    pinl(spi_cs)
+    SPI.SPI_WRITE($0600_0000, 8, false)
+    pinh(spi_cs)
+    waitms(1)
+    pinl(spi_cs)
+  ' if cleared, we can write "Hello World"
+    SPI.SPI_WRITE($0280_0000, 32, false)
+    SPI.SPI_WRITE($1234_0000, 16, false)
+    pinh(spi_cs)
 
 
 
