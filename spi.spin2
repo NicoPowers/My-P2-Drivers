@@ -106,6 +106,15 @@ pinstart(mosi_pin, mosi_m, mosi_x, 0)
 spi_isInitialized := true
 
 
+PUB SPI_DEINIT()
+
+if spi_isInitialized
+  pinclear(spi_clk_pin)
+  pinclear(spi_mosi_pin)
+  pinclear(spi_miso_pin)
+  clk_m := clk_x := mosi_m := mosi_x := miso_m := miso_x := 0
+  spi_isInitialized := false
+
 PUB SPI_TRANSFER(data, bitsToTransfer, isLSB) : dataReadMod | dataWriteMod
 
 if spi_isInitialized
