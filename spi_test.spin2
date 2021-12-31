@@ -23,6 +23,5 @@ pinl(22)
 SPI.SPI_TRANSFER($5678_1234, 16)
 pinh(22)
 
-
 repeat
 
