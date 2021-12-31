@@ -8,7 +8,7 @@ long spi_isInitialized
 pub start()
 return
 
-PUB SPI_INIT(clk_pin, mosi_pin, miso_pin, spi_mode, frequency) : status | displacement, modified_frequency
+PUB INIT(clk_pin, mosi_pin, miso_pin, spi_mode, frequency) : status | displacement, modified_frequency
 
 ' verify correct spi_mode is entered (0-3)
 if spi_mode < 0 || spi_mode > 3
@@ -103,15 +103,13 @@ case spi_mode
 ' start SPI CLK with no transitions
 pinstart(clk_pin, clk_m, clk_x, 0)
 
-
-
 ' start SPI MISO
 pinstart(miso_pin, miso_m, miso_x, 0)
 
 spi_isInitialized := true
 
 
-PUB SPI_DEINIT()
+PUB DEINIT()
 
 if spi_isInitialized
   pinclear(spi_clk_pin)
@@ -120,7 +118,7 @@ if spi_isInitialized
   clk_m := clk_x := mosi_m := mosi_x := miso_m := miso_x := 0
   spi_isInitialized := false
 
-PUB SPI_WRITE(data, bitsToWrite, isLSB) | dataWriteMod
+PUB WRITE(data, bitsToWrite, isLSB) | dataWriteMod
 
 if spi_isInitialized
  ' verify that the number of bits is valid
@@ -136,20 +134,18 @@ if spi_isInitialized
 
   ' setup MOSI
   mosi_x := (mosi_x & $FFE0) | (bitsToWrite - 1)
-  {
-  WXPIN(spi_mosi_pin, mosi_x)
-  WYPIN(spi_mosi_pin, dataWriteMod)
-  }
+
   ' start SPI MOSI
   pinstart(spi_mosi_pin, mosi_m, mosi_x, dataWriteMod)
 
   ' start clocking
   WYPIN(spi_clk_pin, bitsToWrite*2)
+
   ' wait until the clock stops
-  waitForIN(spi_clk_pin)
+  _wait_for_in(spi_clk_pin)
   pinclear(spi_mosi_pin)
 
-PUB SPI_READ(bitsToRead, isLSB) : dataReadMod
+PUB READ(bitsToRead, isLSB) : dataReadMod
 
 if spi_isInitialized
  ' verify that the number of bits is valid
@@ -159,10 +155,12 @@ if spi_isInitialized
   ' setup MISO
   miso_x := (miso_x & $FFE0) | (bitsToRead - 1)
   WXPIN(spi_miso_pin, miso_x)
+
   ' start clocking
   WYPIN(spi_clk_pin, bitsToRead*2)
+
   ' wait until the clock stops
-  waitForIN(spi_clk_pin)
+  _wait_for_in(spi_clk_pin)
 
   ' if we need to receive MSB, reorder the data since smart pins will receive it LSB
   dataReadMod := RDPIN(spi_miso_pin)
@@ -173,7 +171,7 @@ if spi_isInitialized
     if (bitsToRead < 32)
       dataReadMod >>= (32-bitsToRead)
 
-PUB SPI_TRANSFER(data, bitsToTransfer, isLSB) : dataReadMod | dataWriteMod
+PUB TRANSFER(data, bitsToTransfer, isLSB) : dataReadMod | dataWriteMod
 
 if spi_isInitialized
  ' verify that the number of bits is valid
@@ -189,15 +187,16 @@ if spi_isInitialized
 
   ' setup MOSI
   mosi_x := (mosi_x & $FFE0) | (bitsToTransfer - 1)
-  WXPIN(spi_mosi_pin, mosi_x)
-  WYPIN(spi_mosi_pin, dataWriteMod)
+  pinstart(spi_mosi_pin, mosi_m, mosi_x, dataWriteMod)
+
   ' setup MISO
   miso_x := (miso_x & $FFE0) | (bitsToTransfer - 1)
   WXPIN(spi_miso_pin, miso_x)
+
   ' start clocking
   WYPIN(spi_clk_pin, bitsToTransfer*2)
   ' wait until the clock stops
-  waitForIN(spi_clk_pin)
+  _wait_for_in(spi_clk_pin)
 
   ' if we need to receive MSB, reorder the data since smart pins will receive it LSB
   dataReadMod := RDPIN(spi_miso_pin)
@@ -208,7 +207,9 @@ if spi_isInitialized
     dataReadMod := dataReadMod rev 31
     dataReadMod := dataReadMod zerox (bitsToTransfer - 1)
 
-PRI waitForIN(pin)
+  pinclear(spi_mosi_pin)
+
+PRI _wait_for_in(pin)
 
 org
 
