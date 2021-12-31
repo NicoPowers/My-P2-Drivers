@@ -1,31 +1,8 @@
-CON
-
-_clkfreq = 150_000_000
-
 VAR
 
 long clk_m, clk_x, mosi_m, mosi_x, miso_m, miso_x
 long spi_clk_pin, spi_mosi_pin, spi_miso_pin
 long spi_isInitialized, spi_isLSB
-
-PUB SPI_STARTUP()
-
-
-spi_isInitialized := false
-pinh(22)
-waitms(10)
-
-SPI_INIT(20, 21, 23, 0, true, 100_000)
-
-pinl(22)
-SPI_WRITE($5678_1234, 32)
-SPI_WRITE($ABCD_EFAA, 32)
-pinh(22)
-
-
-repeat
-
-
 
 
 PUB SPI_INIT(clk_pin, mosi_pin, miso_pin, spi_mode, isLSB, frequency) : status | displacement, modified_frequency
@@ -150,7 +127,59 @@ if spi_isInitialized
   WYPIN(spi_clk_pin, bitsToWrite*2)
   waitForIN(spi_clk_pin)
 
+PUB SPI_READ(bitsToRead) : data_mod
 
+if spi_isInitialized
+ ' verify that the number of bits is valid
+  if bitsToRead < 1 or bitsToRead > 32
+    return
+  ' clear bits to send, and then rewrite it
+  miso_x := (miso_x & $FFE0) | (bitsToRead - 1)
+  WXPIN(spi_miso_pin, miso_x)
+  WYPIN(spi_clk_pin, bitsToRead*2)
+  waitForIN(spi_clk_pin)
+
+  ' if we need to receive MSB, reorder the data since smart pins will receive it LSB
+  data_mod := RDPIN(spi_miso_pin)
+  if !spi_isLSB
+    if (bitsToRead < 32)
+      data_mod >>= (32-bitsToRead)
+    data_mod := data_mod rev 31
+    data_mod := data_mod zerox (bitsToRead - 1)
+
+PUB SPI_TRANSFER(data, bitsToTransfer) : dataReadMod | dataWriteMod
+
+if spi_isInitialized
+ ' verify that the number of bits is valid
+  if bitsToTransfer < 1 or bitsToTransfer > 32
+    return
+
+  ' if we need to send MSB, reorder the data since smart pins will send it LSB
+  dataWriteMod := data
+  if !spi_isLSB
+    if (bitsToTransfer < 32)
+      dataWriteMod <<= (32-bitsToTransfer)
+    dataWriteMod := data rev 31
+
+  ' setup MOSI
+  mosi_x := (mosi_x & $FFE0) | (bitsToTransfer - 1)
+  WXPIN(spi_mosi_pin, mosi_x)
+  WYPIN(spi_mosi_pin, dataWriteMod)
+  ' setup MISO
+  miso_x := (miso_x & $FFE0) | (bitsToTransfer - 1)
+  WXPIN(spi_miso_pin, miso_x)
+  ' start clocking
+  WYPIN(spi_clk_pin, bitsToTransfer*2)
+  ' wait until the clock stops
+  waitForIN(spi_clk_pin)
+
+  ' if we need to receive MSB, reorder the data since smart pins will receive it LSB
+  dataReadMod := RDPIN(spi_miso_pin)
+  if !spi_isLSB
+    if (bitsToTransfer < 32)
+      dataReadMod >>= (32-bitsToTransfer)
+    dataReadMod := dataReadMod rev 31
+    dataReadMod := dataReadMod zerox (bitsToTransfer - 1)
 
 PRI waitForIN(pin)
 

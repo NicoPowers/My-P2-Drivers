@@ -1,0 +1,28 @@
+{Object_Title_and_Purpose}
+
+
+CON
+  _clkfreq = 150_000_000
+
+VAR
+  long  symbol
+
+OBJ
+  SPI      : "spi.spin2"
+
+
+PUB main()
+
+
+pinh(22)
+waitms(10)
+
+SPI.SPI_INIT(20, 21, 23, 0, true, 100_000)
+
+pinl(22)
+SPI.SPI_TRANSFER($5678_1234, 16)
+pinh(22)
+
+
+repeat
+
