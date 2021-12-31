@@ -18,11 +18,8 @@ waitms(10)
 SPI_INIT(20, 21, 23, 0, true, 100_000)
 
 pinl(22)
-SPI_WRITE($5678, 16)
-pinh(22)
-waitms(1)
-pinl(22)
-SPI_WRITE($1234, 16)
+SPI_WRITE($5678_1234, 32)
+SPI_WRITE($ABCD_EFAA, 32)
 pinh(22)
 
 
@@ -123,8 +120,11 @@ case spi_mode
     clk_m |= P_INVERT_OUTPUT
 
 
-' setup SPI MOSI to idle on LOW
+' start SPI CLK with no transitions
 pinstart(clk_pin, clk_m, clk_x, 0)
+
+' start SPI MOSI with an empty buffer
+pinstart(mosi_pin, mosi_m, mosi_x, 0)
 
 spi_isInitialized := true
 spi_isLSB := isLSB
@@ -135,18 +135,21 @@ if spi_isInitialized
  ' verify that the number of bits is valid
   if bitsToWrite < 1 or bitsToWrite > 32
     return
+
+  ' if we need to send MSB, reorder the data since smart pins will send it LSB
   data_mod := data
   if !spi_isLSB
     if (bitsToWrite < 32)
       data_mod <<= (32-bitsToWrite)
     data_mod := data rev 31
-  ' clear bits to send, and then rewrite it
 
-  mosi_x := (mosi_x & $FFE0) | (bitsToWrite)
-  pinstart(spi_mosi_pin, mosi_m, mosi_x, data_mod)
+  ' clear bits to send, and then rewrite it
+  mosi_x := (mosi_x & $FFE0) | (bitsToWrite - 1)
+  WXPIN(spi_mosi_pin, mosi_x)
+  WYPIN(spi_mosi_pin, data_mod)
   WYPIN(spi_clk_pin, bitsToWrite*2)
   waitForIN(spi_clk_pin)
-  pinclear(spi_mosi_pin)
+
 
 
 PRI waitForIN(pin)
