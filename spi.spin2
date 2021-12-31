@@ -106,6 +106,8 @@ pinstart(clk_pin, clk_m, clk_x, 0)
 ' start SPI MISO
 pinstart(miso_pin, miso_m, miso_x, 0)
 
+' SPI MOSI will be started and cleared when write is performed, this is due to buffer issues
+
 spi_isInitialized := true
 
 
@@ -145,6 +147,7 @@ if spi_isInitialized
   _wait_for_in(spi_clk_pin)
   pinclear(spi_mosi_pin)
 
+
 PUB READ(bitsToRead, isLSB) : dataReadMod
 
 if spi_isInitialized
@@ -155,7 +158,6 @@ if spi_isInitialized
   ' setup MISO
   miso_x := (miso_x & $FFE0) | (bitsToRead - 1)
   WXPIN(spi_miso_pin, miso_x)
-
   ' start clocking
   WYPIN(spi_clk_pin, bitsToRead*2)
 
@@ -170,6 +172,7 @@ if spi_isInitialized
   else
     if (bitsToRead < 32)
       dataReadMod >>= (32-bitsToRead)
+
 
 PUB TRANSFER(data, bitsToTransfer, isLSB) : dataReadMod | dataWriteMod
 

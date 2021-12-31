@@ -2,7 +2,7 @@
 
 
 CON
-  _clkfreq = 150_000_000
+  _clkfreq = 200_000_000
   clk = 60
   mosi = 59
   miso = 58
@@ -22,7 +22,7 @@ pinh(cs)
 
 
 ' clk, mosi, miso, mode, frequency
-SPI.INIT(clk, mosi, miso, 0, 1_000_000)
+SPI.INIT(clk, mosi, miso, 0, 20_000_000)
 
 ' check manufacturer id and device id (should be $EF and $17, respectively)
 pinl(cs)
@@ -31,7 +31,8 @@ data := SPI.READ(8, false)
 debug(uhex(data))
 data := SPI.READ(8, false)
 debug(uhex(data))
-pinh(cs)
+pinh (cs)
+
 
 waitms(1)
 
@@ -42,7 +43,7 @@ repeat 5
   SPI.WRITE($0380_0000, 32, false)
   data := SPI.READ(16, false)
   debug(uhex(data))
-  pinh(cs)
+  pinh (cs)
 
 waitms(1)
 
@@ -63,3 +64,12 @@ if (data == $FF)
 
 repeat
 
+PRI _wait_flash() | st
+
+
+' waits until busy flag == 0, drives spi_cs high when done
+repeat
+  SPI.WRITE($05, 8, false)
+  st := SPI.READ(8, false)
+until st & $01 == 0
+pinh (cs)
