@@ -1,0 +1,126 @@
+{Object_Title_and_Purpose}
+
+
+CON
+  _clkfreq = 300_000_000
+  baud_rate = 12_000_000 ' full speed
+  D_P   = 1 ' upper
+  D_M   = 0 ' lower
+  D_M_MODE = P_USB_PAIR | P_OE
+  D_P_MODE = P_USB_PAIR | P_OE | P_HIGH_1K5
+
+VAR
+
+BYTE dataRec[20]
+
+PUB main()  | recording, temp, currentByte, lastByte, numReads, toggleBit, prevToggleBit
+
+numReads := 0
+toggleBit := 0
+
+temp := muldiv64(baud_rate,$10000,clkfreq)
+
+coginit(newcog, @INIT_USB, @temp)
+
+'pinstart(D_M, D_M_MODE, $6666, 0) ' lower pin establishes USB mode and baud rate
+'pinstart(D_P, D_P_MODE, 0 ,0) ' upper pin establishes USB Pullup for Full Speed mode
+
+
+'_wait_for_in(D_M)
+
+
+
+
+
+
+
+DAT
+
+org
+INIT_USB
+        dirl #D_P                                       ' clear dir bits
+        dirl #D_M
+
+                                                        ' configure lower pin mode
+        WRPIN ##D_M_MODE, #D_M
+
+                                                        ' configure upper pin mode
+        WRPIN ##D_P_MODE, #D_P
+
+
+        WXPIN ##$4A3D, #D_M                             ' set USB for device mode and full speed baud rate (lower pin, D_M)
+
+                                                        ' set pins' dir to start USB
+        dirh #D_P
+        dirh #D_M
+
+'TEST_IN
+'        TESTP #D_M WC                                    ' wait for status word
+'        IF_C CALL #READ_DATA                                ' if C is set (IN = 1), branch to IN_SET
+'        JMP #TEST_IN                                    ' if C is NOT set, go back to WAIT_IN to continue polling
+
+' wait for an EOP (1 << 5) in RQPIN
+        DRVH            #2
+WAIT_SYNC  '(0x80)
+        RDPIN           D,      #D_M
+        SHR             D,      #8    WC      'get byte into D, get toggle bit into C
+        CMP             D,      #$80  WZ
+        IF_Z            JMP     #INIT_WAIT_SETUP
+        JMP             #WAIT_SYNC
+
+INIT_WAIT_SETUP
+        GETCT           currClocks
+        MOV             endClocks, currClocks
+        ADD             endClocks, ##333333
+        JMP             #WAIT_SETUP
+
+
+FOUND_SETUP
+        DRVL            #2
+        NOP
+        DRVH            #2
+        JMP             #WAIT_SYNC
+
+
+WAIT_SETUP '(0x2D)
+        ' make sure we haven't waited more than 400 cycles
+        GETCT           currClocks
+        CMP             currClocks, endClocks WC
+        IF_GE           JMP     #WAIT_SYNC
+        RDPIN           D,      #D_M
+        SHR             D,      #8    WC      'get byte into D, get toggle bit into C
+        CMP             D,      #$2D  WZ
+        IF_Z            JMP     #FOUND_SETUP
+        JMP             #WAIT_SETUP
+
+READ_DATA
+        RDPIN   D, #D_M
+        ' determine if this packet represents an EOP
+        'TEST D, #(1 << 5) WZ
+        'IF_NZ CALL #EOP_FRAME
+        SHR     D,#8    WC      'get byte into D, get toggle bit into C
+        BITC    currC, #0
+        CMPSUB  prevC, currC WZ
+        IF_NE   DRVNOT #2
+        MOV     prevC, currC
+        JMP     #READ_DATA
+
+' if we received an EOP, let's clear the status register for the receiver and start collecting bytes now
+EOP_FRAME
+        DRVNOT #3
+        RET
+
+EVAL_BYTE
+        DRVNOT #2
+        CMP    D, #$A5 WZ
+        IF_Z   DRVNOT #3
+        RET
+
+
+currClocks                      LONG            0
+endClocks                       LONG            0
+PD                              LONG            0
+D                               LONG            0
+prevC                           LONG            2
+currC                           LONG            0
+
