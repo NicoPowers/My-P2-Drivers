@@ -59,19 +59,6 @@ INIT_USB
 
 ' START USB FSM
 
-WAIT_EOP
-        TESTP           #D_M WC                         ' wait for IN to be set
-        IF_C            JMP #CHECK_EOP                  ' if C is set (IN = 1), see if it is EOP
-        JMP             #WAIT_EOP                       ' if C is NOT set, keep waiting
-
-CHECK_EOP
-        RDPIN           D,      #D_M                    ' read pin to get data
-        TEST            D,      #(1 << 5) WZ            ' if bit 5 is set, this is EOP
-        IF_NZ           DRVNOT  #2
-        IF_NZ           JMP     #WAIT_SOP               ' now we can wait for SYNC
-        JMP             #WAIT_EOP                       ' if this was not EOP, go back to waiting for EOP
-
-
 WAIT_SOP
         TESTP           #D_M WC
         IF_C            JMP     #CHECK_SOP
@@ -79,44 +66,40 @@ WAIT_SOP
 
 CHECK_SOP
         RDPIN           D,      #D_M
-        TEST            D,      #(1 << 4) WZ            ' if bit 5 is set, this is EOP
-        IF_NZ           DRVNOT  #2
-        IF_NZ           JMP     #WAIT_EOP
-        JMP             #WAIT_SOP
-{
-WAIT_PID
-        RDPIN           D,      #D_M
-        GETBYTE         D_BYTE, D, #1
-        CMP             D_BYTE, #SETUP_PID  WZ
-        IF_Z            DRVNOT  #2
-        IF_Z            JMP     #WAIT_EOP
+        TESTB           D,      #4 WZ
+        IF_NZ           JMP     #WAIT_SOP
+        CALL            #WAIT_BYTE
         JMP             #WAIT_PID
 
-}
+
+WAIT_PID
+        CALL            #WAIT_BYTE
+        DRVNOT          #3
+        CALL            #WAIT_BYTE
+        DRVNOT          #3
+        CALL            #WAIT_BYTE
+        DRVNOT          #3
+        JMP             #WAIT_SOP
+
+
 
 WAIT_BYTE
         TESTP           #D_M WC
-        IF_C            CALL     #CHECK_NEW_BYTE
-        JMP             #WAIT_BYTE
-
-CHECK_NEW_BYTE
+        IF_NC           JMP     #WAIT_BYTE
         RDPIN           D,      #D_M
-        ' check for any status conditions
-        TEST            D,      #(1 << 4) WZ            ' if bit 5 is set, this is EOP
-        IF_NZ           DRVNOT  #3
         SHR             D,      #8    WC      'get byte into D, get toggle bit into C
         BITC            currC,  #0
         CMPS            prevC,  currC WZ
-        IF_NE           DRVNOT  #2
-        'IF_NE           CALL    #EVAL_NEW_BYTE
         MOV             prevC,  currC
+        IF_E            JMP     #WAIT_BYTE
         RET
 
+{
 EVAL_NEW_BYTE
         CMP             D,      #$80  WZ
         IF_Z            DRVNOT  #3
         RET
-
+}
 ' There are 4 different packet formats we need to be able to read
 
 ' Token
@@ -177,9 +160,8 @@ currClocks                      LONG            0
 endClocks                       LONG            0
 PD                              LONG            0
 D                               LONG            0
-D_BYTE                          LONG            0
 prevC                           LONG            2
 currC                           LONG            0
 
-flag                            LONG            0
+isNewByte                       LONG            0
 
