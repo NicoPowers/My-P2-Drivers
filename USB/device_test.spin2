@@ -2,12 +2,15 @@
 
 
 CON
-  _clkfreq = 300_000_000
+  _clkfreq = 200_000_000
   baud_rate = 12_000_000 ' full speed
   D_P   = 1 ' upper
   D_M   = 0 ' lower
   D_M_MODE = P_USB_PAIR | P_OE
   D_P_MODE = P_USB_PAIR | P_OE | P_HIGH_1K5
+  SETUP_PID       = $2D
+  EOP_BM          = (1 << 5)
+  SOP_BM          = (1 << 4)
 
 VAR
 
@@ -48,26 +51,80 @@ INIT_USB
         WRPIN ##D_P_MODE, #D_P
 
 
-        WXPIN ##$4A3D, #D_M                             ' set USB for device mode and full speed baud rate (lower pin, D_M)
+        WXPIN ##$4F5C, #D_M                             ' set USB for device mode and full speed baud rate (lower pin, D_M)
 
                                                         ' set pins' dir to start USB
         dirh #D_P
         dirh #D_M
 
-'TEST_IN
-'        TESTP #D_M WC                                    ' wait for status word
-'        IF_C CALL #READ_DATA                                ' if C is set (IN = 1), branch to IN_SET
-'        JMP #TEST_IN                                    ' if C is NOT set, go back to WAIT_IN to continue polling
+' START USB FSM
 
-' wait for an EOP (1 << 5) in RQPIN
-        DRVH            #2
-WAIT_SYNC  '(0x80)
+WAIT_EOP
+        TESTP           #D_M WC                         ' wait for IN to be set
+        IF_C            JMP #CHECK_EOP                  ' if C is set (IN = 1), see if it is EOP
+        JMP             #WAIT_EOP                       ' if C is NOT set, keep waiting
+
+CHECK_EOP
+        RDPIN           D,      #D_M                    ' read pin to get data
+        TEST            D,      #(1 << 5) WZ            ' if bit 5 is set, this is EOP
+        IF_NZ           DRVNOT  #2
+        IF_NZ           JMP     #WAIT_SOP               ' now we can wait for SYNC
+        JMP             #WAIT_EOP                       ' if this was not EOP, go back to waiting for EOP
+
+
+WAIT_SOP
+        TESTP           #D_M WC
+        IF_C            JMP     #CHECK_SOP
+        JMP             #WAIT_SOP
+
+CHECK_SOP
         RDPIN           D,      #D_M
-        SHR             D,      #8    WC      'get byte into D, get toggle bit into C
-        CMP             D,      #$80  WZ
-        IF_Z            JMP     #INIT_WAIT_SETUP
-        JMP             #WAIT_SYNC
+        TEST            D,      #(1 << 4) WZ            ' if bit 5 is set, this is EOP
+        IF_NZ           DRVNOT  #2
+        IF_NZ           JMP     #WAIT_EOP
+        JMP             #WAIT_SOP
+{
+WAIT_PID
+        RDPIN           D,      #D_M
+        GETBYTE         D_BYTE, D, #1
+        CMP             D_BYTE, #SETUP_PID  WZ
+        IF_Z            DRVNOT  #2
+        IF_Z            JMP     #WAIT_EOP
+        JMP             #WAIT_PID
 
+}
+
+WAIT_BYTE
+        TESTP           #D_M WC
+        IF_C            CALL     #CHECK_NEW_BYTE
+        JMP             #WAIT_BYTE
+
+CHECK_NEW_BYTE
+        RDPIN           D,      #D_M
+        ' check for any status conditions
+        TEST            D,      #(1 << 4) WZ            ' if bit 5 is set, this is EOP
+        IF_NZ           DRVNOT  #3
+        SHR             D,      #8    WC      'get byte into D, get toggle bit into C
+        BITC            currC,  #0
+        CMPS            prevC,  currC WZ
+        IF_NE           DRVNOT  #2
+        'IF_NE           CALL    #EVAL_NEW_BYTE
+        MOV             prevC,  currC
+        RET
+
+EVAL_NEW_BYTE
+        CMP             D,      #$80  WZ
+        IF_Z            DRVNOT  #3
+        RET
+
+' There are 4 different packet formats we need to be able to read
+
+' Token
+' Data
+' Handshake
+' SOF
+
+{
 INIT_WAIT_SETUP
         GETCT           currClocks
         MOV             endClocks, currClocks
@@ -77,7 +134,6 @@ INIT_WAIT_SETUP
 
 FOUND_SETUP
         DRVL            #2
-        NOP
         DRVH            #2
         JMP             #WAIT_SYNC
 
@@ -116,11 +172,14 @@ EVAL_BYTE
         IF_Z   DRVNOT #3
         RET
 
-
+}
 currClocks                      LONG            0
 endClocks                       LONG            0
 PD                              LONG            0
 D                               LONG            0
+D_BYTE                          LONG            0
 prevC                           LONG            2
 currC                           LONG            0
+
+flag                            LONG            0
 
