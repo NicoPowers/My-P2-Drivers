@@ -11,6 +11,7 @@ CON
   SETUP_PID       = $2D
   EOP_BM          = (1 << 5)
   SOP_BM          = (1 << 4)
+  TIMEOUT_DELAY   = 1000
 
 VAR
 
@@ -57,34 +58,25 @@ INIT_USB
         dirh #D_P
         dirh #D_M
 
+        DRVL  #3
+        JMP   #SETUP_STAGE
+
 ' START USB FSM
 
-WAIT_SOP
-        TESTP           #D_M WC
-        IF_C            JMP     #CHECK_SOP
-        JMP             #WAIT_SOP
+PULSE_2
+        DRVNOT            #2
+        WAITX             ##1
+        DRVNOT            #2
+        RET
 
-CHECK_SOP
-        RDPIN           D,      #D_M
-        TESTB           D,      #4 WZ
-        IF_NZ           JMP     #WAIT_SOP
-        CALL            #WAIT_BYTE
-        JMP             #WAIT_PID
-
-
-WAIT_PID
-        CALL            #WAIT_BYTE
-        DRVNOT          #3
-        CALL            #WAIT_BYTE
-        DRVNOT          #3
-        CALL            #WAIT_BYTE
-        DRVNOT          #3
-        JMP             #WAIT_SOP
-
-
+PULSE_3
+        DRVNOT            #3
+        WAITX             ##1
+        DRVNOT            #3
+        RET
 
 WAIT_BYTE
-        TESTP           #D_M WC
+        TESTP           #D_M    WC
         IF_NC           JMP     #WAIT_BYTE
         RDPIN           D,      #D_M
         SHR             D,      #8    WC      'get byte into D, get toggle bit into C
@@ -93,6 +85,65 @@ WAIT_BYTE
         MOV             prevC,  currC
         IF_E            JMP     #WAIT_BYTE
         RET
+
+WAIT_SOP
+        TESTP           #D_M    WC
+        IF_NC           JMP     #WAIT_SOP
+        RDPIN           D,      #D_M
+        TESTB           D,      #4 WZ
+        TESTB           D,      #7 WC
+        BITC            currC,  #0
+        MOV             prevC,  currC
+        IF_NZ           JMP     #WAIT_SOP
+        RET
+
+WAIT_EOP
+        TESTP           #D_M    WC
+        IF_NC           JMP     #WAIT_EOP
+        RDPIN           D,      #D_M
+        TESTB           D,      #5 WZ
+        TESTB           D,      #7 WC
+        BITC            currC,  #0
+        MOV             prevC,  currC
+        IF_NZ           JMP     #WAIT_EOP
+        RET
+
+WAIT_SETUP
+        MOV             setupFound, #0
+        CALL            #WAIT_BYTE
+        CMP             D, #SETUP_PID WZ
+        IF_E            MOV setupFound, #1
+        RET
+
+
+
+SETUP_STAGE
+
+
+
+        ' wait for SOP Byte
+        CALL            #WAIT_SOP
+        CALL            #PULSE_2
+
+        ' wait for possible SETUP byte (0x2D)
+        CALL            #WAIT_SETUP
+
+        ' if setup byte was found within reasonable amount of time, this is a valid SETUP transaction
+
+        CMPS            setupFound, #1
+        IF_E            CALL    #PULSE_3
+
+        CALL            #WAIT_EOP
+        CALL            #PULSE_2
+
+
+
+        JMP             #SETUP_STAGE
+
+
+
+DONE    JMP   #DONE
+
 
 {
 EVAL_NEW_BYTE
@@ -158,10 +209,12 @@ EVAL_BYTE
 }
 currClocks                      LONG            0
 endClocks                       LONG            0
-PD                              LONG            0
 D                               LONG            0
 prevC                           LONG            2
 currC                           LONG            0
-
-isNewByte                       LONG            0
-
+addrField                       LONG            0
+endpField                       LONG            0
+timeout                         LONG            1
+ct1                             LONG            1
+ct2                             LONG            1
+setupFound                      LONG            0
