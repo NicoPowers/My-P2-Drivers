@@ -75,6 +75,12 @@ PULSE_3
         DRVNOT            #3
         RET
 
+WAIT_TO_SEND
+        TESTP           #D_P    WC
+        IF_NC           JMP     #WAIT_TO_SEND
+        AKPIN           #D_P
+        RET
+
 WAIT_BYTE
         TESTP           #D_M    WC
         IF_NC           JMP     #WAIT_BYTE
@@ -116,6 +122,12 @@ WAIT_SETUP
         RET
 
 
+SEND_TEST_BYTES
+        WYPIN           #$80,   #D_M
+        CALL            #WAIT_TO_SEND
+        WYPIN           #$AA,    #D_M
+        WYPIN           #$BB,    #D_M
+        WYPIN           #$CC,    #D_M
 
 SETUP_STAGE
 
@@ -136,7 +148,7 @@ SETUP_STAGE
         CALL            #WAIT_EOP
         CALL            #PULSE_2
 
-
+        CALL            #SEND_TEST_BYTES
 
         JMP             #SETUP_STAGE
 
